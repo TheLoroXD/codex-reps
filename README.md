@@ -160,9 +160,13 @@ Add to `~/.claude/settings.json`:
   - High knees, torso twists, arm circles
   - Shoulder shrugs, neck rotations, neck tilts (posture correction)
 - **Two modes:**
-  - Quick mode: Keep exercising while Claude works ⚡
+  - Quick mode: Keep exercising while Claude works
   - Normal mode: 10+ reps for breaks
-- **Desktop notifications** when Claude is ready
+- **Desktop notifications** when Claude is ready (only when terminal isn't focused)
+- **CLI control** - `vibereps --toggle` / `--pause` / `--resume` / `--status`
+- **Smart suppression** - skips agent sessions, debounces notifications, prevents replay triggers
+- **Auto-updates** - daily non-blocking check for new versions
+- **Shell completions** - tab completion for bash and zsh
 - **No installation required** - uses Python standard library
 - **Privacy-focused** - all video processing happens locally in browser
 
@@ -249,7 +253,7 @@ echo '{"hook_event_name":"Notification"}' | ./vibereps.py
 /hooks list
 
 # Make scripts executable
-chmod +x vibereps.py notify_complete.py
+chmod +x vibereps.py
 
 # Verify paths are correct (use absolute paths)
 which python3  # Use this path if needed

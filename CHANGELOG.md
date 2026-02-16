@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-16
+
+### Added
+- **Single entrypoint**: Merged `exercise_tracker.py` and `notify_complete.py` into `vibereps.py`
+- **Stdin event routing**: Reads `hook_event_name` from stdin JSON (argv as fallback)
+- **`--toggle` CLI command**: Single command to pause/resume vibereps
+- **Agent session suppression**: Skips exercises for delegate/agent sessions (team sub-agents)
+- **Session replay suppression**: Suppresses events within 3s of session start to prevent ghost triggers
+- **Notification debounce**: Deduplicates rapid notifications within a 5s window
+- **Terminal focus detection**: Desktop notifications only fire when terminal isn't the frontmost app
+- **PID tracking**: Daemon writes PID to `/tmp/vibereps-daemon.pid` for reliable cleanup
+- **Auto-update checker**: Non-blocking daily version check against GitHub; shows banner if update available
+- **Shell tab completions**: `completions.bash` with native bash + zsh support
+- **Guard.sh integration**: Installer wraps hooks with `guard.sh` if present for instant toggling
+- **Terminal tab titles**: Sets terminal tab to "vibereps: exercising" / "vibereps: done"
+- **VERSION file**: `VERSION` file for auto-update system
+- **`/usr/local/bin/vibereps` symlink**: CLI available system-wide
+
+### Fixed
+- Notifications no longer blocked by pause check (pause gate moved into `main()`, skips notification events)
+
+### Changed
+- `--pause`, `--resume`, `--status` output changed from JSON to human-readable text
+- `notify_complete.py` is now a thin deprecated wrapper forwarding to `vibereps.py`
+- Hook registration simplified — same command for all events, event type from stdin
+
 ## [0.4.0] - 2026-02-04
 
 ### Added
@@ -43,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Window bounds validation requires 100px visible (prevents off-screen windows)
 - Fixed 'Object has been destroyed' errors in Electron
 - Fixed exercise logging in Electron - use IPC instead of HTTP
-- Fixed IndentationError in exercise_tracker.py for UserPromptSubmit hook
+- Fixed IndentationError in exercise_tracker.py (now vibereps.py) for UserPromptSubmit hook
 - Fixed MediaPipe loading race conditions
 
 ### Changed

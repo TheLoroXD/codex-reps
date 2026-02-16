@@ -27,6 +27,8 @@ vibereps/
 ├── vibereps.py            # Main hook script (exercise tracking + notifications)
 ├── exercise_ui.html       # Browser UI with pose detection
 ├── notify_complete.py     # Deprecated wrapper (forwards to vibereps.py)
+├── completions.bash       # Shell tab completions (bash + zsh)
+├── VERSION                # Version for auto-update checker
 ├── exercises/             # Exercise JSON configs
 ├── server/                # Optional remote server
 ├── docs/                  # VitePress documentation site

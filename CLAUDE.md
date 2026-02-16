@@ -56,7 +56,8 @@ Claude Code ────────MCP over HTTP──────────�
 - `vibereps.py` reads the event type from stdin and routes to notification handler
 - Sends HTTP POST to `http://localhost:8765/notify` to signal completion
 - Exercise tracker UI polls `/status` endpoint to detect when Claude is ready
-- Shows desktop notification and updates UI when complete
+- Shows desktop notification (only when terminal isn't focused) and updates UI when complete
+- Notifications are debounced (5s window) to prevent duplicates
 
 ### Electron Menubar App (`electron/`)
 
@@ -177,6 +178,43 @@ Triggers on every prompt submission (more frequent, may interrupt research tasks
 
 Claude Code → MCP HTTP request → Remote server → JSON response
 
+### Reliability Features
+
+Built-in protections to prevent false triggers and improve notification delivery:
+
+| Feature | How it works |
+|---------|-------------|
+| **Agent session suppression** | Detects `permission_mode: "delegate"` in hook payload; skips exercises for team sub-agents |
+| **Session replay suppression** | Records `SessionStart` timestamps in `~/.vibereps/.state.json`; suppresses events within 3s of session start to avoid ghost triggers on conversation resume |
+| **Notification debounce** | Tracks `last_notification_time`; deduplicates rapid notifications within a 5s window |
+| **Pause-safe notifications** | Pause check runs in `main()` (not module level) and skips `notification` events — so "Claude is done" alerts still reach the exercise UI while paused |
+| **Terminal focus detection** | Uses `osascript` on macOS to check frontmost app; desktop notifications only fire when the terminal isn't focused |
+| **PID tracking** | Daemon writes PID to `/tmp/vibereps-daemon.pid`; cleaned up on exit for reliable process management |
+| **Auto-update checker** | Non-blocking daily check against `VERSION` on GitHub; shows yellow banner on next session if update available |
+| **Guard.sh integration** | Installer detects `~/.claude/hooks/guard.sh` and wraps hook commands for instant toggling via sentinel files |
+
+State is stored in `~/.vibereps/.state.json`:
+```json
+{
+  "session_start_times": {"<cwd_hash>": <timestamp>},
+  "last_notification_time": <timestamp>
+}
+```
+
+### CLI
+
+The `vibereps` command is available system-wide (symlinked to `/usr/local/bin`):
+
+```bash
+vibereps --toggle          # Pause/resume
+vibereps --status          # Check state
+vibereps --pause           # Pause until end of day
+vibereps --resume          # Resume
+vibereps --list-exercises  # Show available exercises
+```
+
+Shell tab completions: `source /path/to/completions.bash` (bash + zsh).
+
 ## Testing & Development
 
 ### Run the Remote Server
@@ -250,27 +288,34 @@ export VIBEREPS_UI_MODE=electron
 export VIBEREPS_TRIGGER_MODE=edit-only
 ```
 
-### Pause/Resume
+### Pause/Resume/Toggle
 
-Temporarily disable vibereps until a specified time:
+Temporarily disable vibereps:
 
 ```bash
+# Toggle pause on/off (simplest)
+vibereps --toggle
+
 # Pause until end of day (default)
-./vibereps.py --pause
+vibereps --pause
 
 # Pause until specific time
-./vibereps.py --pause "2026-01-30T18:00:00"
+vibereps --pause "2026-01-30T18:00:00"
 
 # Resume tracking
-./vibereps.py --resume
+vibereps --resume
 
 # Check status
-./vibereps.py --status
+vibereps --status
 ```
 
-Pause state is stored in `~/.vibereps/config.json` as `paused_until` timestamp.
+The `vibereps` command is symlinked to `/usr/local/bin` during install. Tab completions available via `source completions.bash`.
+
+Pause state is stored in `~/.vibereps/config.json` as `paused_until` timestamp. Pausing does NOT block notifications — if you're mid-exercise when you pause, the "Claude is done" notification still gets through.
 
 If using the Electron menubar app, you can also toggle pause from the tray menu.
+
+If `guard.sh` is present at `~/.claude/hooks/guard.sh`, the installer wraps hook commands with it for instant on/off toggling via `hooks toggle vibereps`.
 
 ### 2. Hook Setup
 
