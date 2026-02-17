@@ -1,7 +1,6 @@
 #!/bin/bash
 #
 # VibeReps Installer for Claude Code
-# Test edit - exercise buttons should now collapse
 # One-liner install: curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash
 #
 
@@ -365,6 +364,18 @@ vibereps_hooks = {
                 }
             ]
         }
+    ],
+    "SessionStart": [
+        {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": notify_cmd,
+                    "async": True
+                }
+            ]
+        }
     ]
 }
 
@@ -481,7 +492,11 @@ show_summary() {
         fi
     fi
     echo ""
-    echo -e "  ${BLUE}Other commands:${NC}"
+    echo -e "  ${BLUE}CLI:${NC}"
+    echo "    vibereps --toggle        Toggle pause on/off"
+    echo "    vibereps --status        Check current state"
+    echo ""
+    echo -e "  ${BLUE}Claude Code skills:${NC}"
     echo "    /test-tracker    - Test the exercise tracker"
     echo "    /add-exercise    - Create a custom exercise"
     echo "    /tune-detection  - Adjust detection sensitivity"
@@ -540,6 +555,15 @@ PYTHON_SCRIPT
             print_success "Removed /Applications/VibeReps.app"
         fi
     fi
+
+    # Remove CLI symlink
+    if [[ -L "/usr/local/bin/vibereps" ]]; then
+        rm -f /usr/local/bin/vibereps
+        print_success "Removed /usr/local/bin/vibereps symlink"
+    fi
+
+    # Remove temp files
+    rm -f /tmp/vibereps-daemon.pid
 
     # Optionally remove install directory
     if [[ -d "$INSTALL_DIR" ]] && [[ "$INSTALL_DIR" == "$HOME/.vibereps" ]]; then
