@@ -39,7 +39,7 @@ def launch_electron_app() -> bool:
         try:
             if time.time() - lock_file.stat().st_mtime < 15:
                 # Wait for other process to finish launching
-                for _ in range(10):
+                for _ in range(24):
                     time.sleep(0.5)
                     if is_electron_app_running():
                         return True
@@ -56,7 +56,8 @@ def launch_electron_app() -> bool:
             stderr=subprocess.DEVNULL
         )
         # Wait for app to start (check port directly to avoid circular dependency)
-        for _ in range(10):
+        # First launch after boot can take 10+ seconds due to macOS Gatekeeper/code signing
+        for _ in range(24):
             time.sleep(0.5)
             try:
                 req = urllib.request.Request(
@@ -1715,7 +1716,19 @@ def main():
         event_type = sys.argv[1]
 
     if not event_type:
-        # No event type from stdin or argv — default to post_tool_use for test mode
+        # No event from stdin or argv — if run interactively, show usage
+        if sys.stdin.isatty():
+            print("vibereps: missing event type", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Usage:", file=sys.stderr)
+            print("  vibereps --toggle               Toggle pause on/off", file=sys.stderr)
+            print("  vibereps --status               Check current state", file=sys.stderr)
+            print("  vibereps --pause [timestamp]    Pause until end of day or timestamp", file=sys.stderr)
+            print("  vibereps --resume               Resume tracking", file=sys.stderr)
+            print("  vibereps --list-exercises       List available exercises", file=sys.stderr)
+            print("  vibereps --help                 Full help", file=sys.stderr)
+            return 1
+        # Non-interactive (piped from hook) — default to post_tool_use
         event_type = "post_tool_use"
 
     # Record session start time (for replay suppression) and check for updates
