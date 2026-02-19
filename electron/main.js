@@ -669,12 +669,19 @@ function createWindow() {
 
   mainWindow.on('show', () => {
     // Tell renderer window is visible (can restart camera if needed)
-    mainWindow.webContents.send('window-show');
-    // Send current sessions to renderer
-    mainWindow.webContents.send('sessions-updated', sessionManager.getAll());
-    // Inject mediapipe path for local loading
-    const mediapipeUrl = `http://localhost:${HTTP_PORT}/mediapipe`;
-    mainWindow.webContents.send('mediapipe-path', mediapipeUrl);
+    // Guard: only send IPC after the page has finished loading,
+    // otherwise the renderer's listeners aren't registered yet
+    const sendShowMessages = () => {
+      mainWindow.webContents.send('window-show');
+      mainWindow.webContents.send('sessions-updated', sessionManager.getAll());
+      const mediapipeUrl = `http://localhost:${HTTP_PORT}/mediapipe`;
+      mainWindow.webContents.send('mediapipe-path', mediapipeUrl);
+    };
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', sendShowMessages);
+    } else {
+      sendShowMessages();
+    }
   });
 }
 

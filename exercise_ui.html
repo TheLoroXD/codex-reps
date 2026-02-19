@@ -681,10 +681,16 @@ const selector = document.getElementById('exerciseSelector');
                     const randomExercise = availableExercises[Math.floor(Math.random() * availableExercises.length)];
                     selector.style.display = 'none';
                     showExerciseToggle(randomExercise);
-                    // Wait for MediaPipe to load before starting
-                    window.mediapipeReady.then(() => {
-                        setTimeout(() => startWithStandUpCheck(randomExercise), 100);
-                    });
+                    if (window.isElectronApp) {
+                        // In Electron mode, defer camera start until window is shown
+                        // Starting camera in a hidden window produces black frames
+                        window._pendingExercise = randomExercise;
+                    } else {
+                        // In browser mode, start immediately
+                        window.mediapipeReady.then(() => {
+                            setTimeout(() => startWithStandUpCheck(randomExercise), 100);
+                        });
+                    }
                 }
 
             } catch (error) {
@@ -1738,11 +1744,37 @@ const selector = document.getElementById('exerciseSelector');
             return isQuickMode ? reps.quick : reps.normal;
         }
 
+        // Log a completed exercise set to disk immediately
+        function logCompletedSet(exercise, reps) {
+            if (!exercise || exercise.startsWith('_') || reps <= 0) return;
+            const duration = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+            const logData = {
+                completed: true,
+                reps: reps,
+                exercise: exercise,
+                duration: duration,
+                timestamp: new Date().toISOString()
+            };
+            if (window.electronAPI?.exerciseComplete) {
+                window.electronAPI.exerciseComplete(logData);
+            } else {
+                fetch('/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(logData)
+                }).catch(err => console.error('Error logging exercise:', err));
+            }
+            console.log(`Logged ${reps} ${exercise} reps`);
+        }
+
         function updateCounter() {
             document.getElementById('counter').textContent = repCount;
             const target = getTargetReps();
 
             if (repCount >= target) {
+                // Log the completed set immediately before any transition
+                logCompletedSet(currentExercise, repCount);
+
                 // Track completed exercise
                 totalRepsThisSession += repCount;
                 completedExercises.add(currentExercise);
@@ -1944,33 +1976,17 @@ const selector = document.getElementById('exerciseSelector');
             const finishBtn = document.querySelector('.finish-btn');
             if (finishBtn) finishBtn.disabled = true;
 
-            const duration = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-            const logData = {
-                completed: true,
-                reps: repCount,
-                exercise: currentExercise,
-                duration: duration,
-                timestamp: new Date().toISOString()
-            };
+            // Only log if there are unlogged reps in progress
+            // (completed sets are already logged by logCompletedSet in updateCounter)
+            const hasUnloggedReps = repCount > 0 && currentExercise &&
+                !currentExercise.startsWith('_') && !completedExercises.has(currentExercise);
 
-            // Use Electron IPC if available, otherwise HTTP
-            const logPromise = window.electronAPI?.exerciseComplete
-                ? Promise.resolve(window.electronAPI.exerciseComplete(logData))
-                : fetch('/complete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(logData)
-                });
+            if (hasUnloggedReps) {
+                logCompletedSet(currentExercise, repCount);
+            }
 
-            logPromise.then(() => {
-                document.getElementById('status').textContent = '✅ Session logged! You can close this window.';
-                setTimeout(() => window.close(), 2000);
-            }).catch(err => {
-                console.error('Error logging session:', err);
-                document.getElementById('status').textContent = 'Session complete! You can close this window.';
-                sessionFinished = false;  // Allow retry on error
-                if (finishBtn) finishBtn.disabled = false;
-            });
+            document.getElementById('status').textContent = '✅ Session logged! You can close this window.';
+            setTimeout(() => window.close(), 2000);
         }
 
         // ============================================
@@ -2301,24 +2317,11 @@ const selector = document.getElementById('exerciseSelector');
         // Clean shutdown on window close
         // ============================================
         function notifyShutdown() {
-            // Auto-log exercise if any reps were done (don't lose progress on close)
-            if (!sessionFinished && repCount > 0 && currentExercise && !currentExercise.startsWith('_')) {
-                const duration = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-                const logData = {
-                    completed: true,
-                    reps: repCount,
-                    exercise: currentExercise,
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                };
-
-                // Use Electron IPC if available (synchronous), otherwise sendBeacon
-                if (window.electronAPI?.exerciseComplete) {
-                    window.electronAPI.exerciseComplete(logData);
-                } else {
-                    navigator.sendBeacon('/complete', new Blob([JSON.stringify(logData)], { type: 'application/json' }));
-                }
-                sessionFinished = true;  // Prevent double-logging
+            // Auto-log any in-progress reps that haven't been logged yet
+            if (!sessionFinished && repCount > 0 && currentExercise &&
+                !currentExercise.startsWith('_') && !completedExercises.has(currentExercise)) {
+                logCompletedSet(currentExercise, repCount);
+                sessionFinished = true;
             }
             navigator.sendBeacon('/shutdown', '');
         }
@@ -2410,9 +2413,11 @@ const selector = document.getElementById('exerciseSelector');
             }).catch(err => console.error('Failed to get sessions:', err));
 
             // Stop camera when window is hidden to save resources and turn off camera light
+            let exerciseWhenHidden = null;
             window.electronAPI.onWindowHide(() => {
                 console.log('Window hidden - stopping camera');
-                const video = document.getElementById('videoElement');
+                exerciseWhenHidden = currentExercise;
+                const video = document.getElementById('video');
                 if (video && video.srcObject) {
                     video.srcObject.getTracks().forEach(track => track.stop());
                     video.srcObject = null;
@@ -2423,13 +2428,23 @@ const selector = document.getElementById('exerciseSelector');
                 }
             });
 
-            // Enumerate cameras when window is first shown
+            // Enumerate cameras and start exercise when window is first shown
             let camerasEnumerated = false;
             window.electronAPI.onWindowShow(() => {
                 console.log('Window shown');
                 if (!camerasEnumerated) {
                     camerasEnumerated = true;
                     enumerateCameras();
+                }
+                // Start deferred exercise from loadExercises (first show)
+                // or restart exercise that was active when window was hidden
+                const exercise = window._pendingExercise || exerciseWhenHidden;
+                window._pendingExercise = null;
+                exerciseWhenHidden = null;
+                if (exercise) {
+                    window.mediapipeReady.then(() => {
+                        setTimeout(() => startWithStandUpCheck(exercise), 100);
+                    });
                 }
             });
         }
