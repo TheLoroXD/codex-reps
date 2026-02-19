@@ -828,6 +828,8 @@ function setupIPC() {
     // Filter out internal states and zero-rep entries (same as Python hook)
     if (data.exercise && !data.exercise.startsWith('_') && data.reps > 0) {
       logExercise(data);
+      // Auto-refresh tray stats after logging
+      if (tray) tray.setContextMenu(buildContextMenu());
     }
   });
 }
