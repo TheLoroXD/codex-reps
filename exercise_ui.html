@@ -631,6 +631,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const singleSetMode = urlParams.get('singleSet') === '1';
         const targetRepsOverride = parseInt(urlParams.get('targetReps') || '', 10);
+        let singleSetComplete = false;
 
         // Detection state (baselines, history)
         let detectionState = {};
@@ -1775,7 +1776,8 @@ const selector = document.getElementById('exerciseSelector');
                 fetch('/complete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(logData)
+                    body: JSON.stringify(logData),
+                    keepalive: true
                 }).catch(err => console.error('Error logging exercise:', err));
             }
             console.log(`Logged ${reps} ${exercise} reps`);
@@ -1807,6 +1809,7 @@ const selector = document.getElementById('exerciseSelector');
                 document.getElementById('videoContainer').classList.remove('active');
 
                 if (singleSetMode) {
+                    singleSetComplete = true;
                     document.getElementById('status').textContent = '✅ Set complete.';
                     setTimeout(() => window.close(), 1200);
                     return;
@@ -1987,6 +1990,12 @@ const selector = document.getElementById('exerciseSelector');
         // Session management
         // ============================================
         let sessionFinished = false;  // Guard against double submission
+
+        window.addEventListener('beforeunload', () => {
+            if (singleSetMode && !singleSetComplete) {
+                navigator.sendBeacon('/abandon', new Blob(['{}'], { type: 'application/json' }));
+            }
+        });
 
         function finishSession() {
             if (sessionFinished) return;  // Prevent double-click

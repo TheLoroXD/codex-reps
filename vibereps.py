@@ -111,6 +111,7 @@ Usage:
   vibereps.py --resume               Resume tracking
   vibereps.py --toggle               Toggle pause on/off
   vibereps.py --status               Check pause status
+  vibereps.py --self-test            Run a tiny built-in check
   vibereps.py --help                 Show this help
 
 Event types (via argv or stdin hook_event_name):
@@ -277,6 +278,7 @@ LEG_EXERCISES = {"squats", "calf_raises", "high_knees", "jumping_jacks"}
 
 # State file for tracking session starts, debounce, etc.
 VIBEREPS_STATE_FILE = Path.home() / ".vibereps" / ".state.json"
+VIBEREPS_HOURLY_PENDING_FILE = Path.home() / ".vibereps" / ".hourly_set.json"
 VIBEREPS_PID_FILE = Path("/tmp/vibereps-daemon.pid")
 
 # Suppression windows (seconds)
@@ -299,6 +301,36 @@ def _save_state(state: dict):
     try:
         VIBEREPS_STATE_FILE.parent.mkdir(exist_ok=True)
         VIBEREPS_STATE_FILE.write_text(json.dumps(state, indent=2))
+    except OSError:
+        pass
+
+
+def get_pending_hourly_set() -> dict | None:
+    try:
+        if VIBEREPS_HOURLY_PENDING_FILE.exists():
+            pending = json.loads(VIBEREPS_HOURLY_PENDING_FILE.read_text())
+            if pending.get("exercise"):
+                return pending
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def write_pending_hourly_set(exercise: str):
+    try:
+        VIBEREPS_HOURLY_PENDING_FILE.parent.mkdir(exist_ok=True)
+        VIBEREPS_HOURLY_PENDING_FILE.write_text(json.dumps({
+            "exercise": exercise,
+            "reps": VIBEREPS_HOURLY_REPS,
+            "started_at": time.time(),
+        }))
+    except OSError:
+        pass
+
+
+def clear_pending_hourly_set():
+    try:
+        VIBEREPS_HOURLY_PENDING_FILE.unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -535,6 +567,8 @@ def _entry_timestamp(entry: dict) -> float | None:
 
 def hourly_set_due() -> bool:
     """Return True when no hourly-rotation exercise is logged in the current window."""
+    if get_pending_hourly_set():
+        return True
     rotation = set(get_hourly_exercise_rotation())
     cutoff = time.time() - VIBEREPS_HOURLY_INTERVAL_SECONDS
     for entry in reversed(_read_exercise_log_entries()):
@@ -550,6 +584,9 @@ def hourly_set_due() -> bool:
 def select_hourly_exercise() -> str:
     """Cycle through the trainer rotation based on completed sets today."""
     from datetime import datetime
+    pending = get_pending_hourly_set()
+    if pending:
+        return pending["exercise"]
     rotation = get_hourly_exercise_rotation()
     today = datetime.now().date()
     completed_today = 0
@@ -561,6 +598,37 @@ def select_hourly_exercise() -> str:
         if ts and datetime.fromtimestamp(ts).date() == today:
             completed_today += 1
     return rotation[completed_today % len(rotation)]
+
+
+def self_test():
+    import shutil
+    import tempfile
+
+    global VIBEREPS_HOURLY_PENDING_FILE
+    old_pending_file = VIBEREPS_HOURLY_PENDING_FILE
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        VIBEREPS_HOURLY_PENDING_FILE = tmp / ".hourly_set.json"
+        assert get_pending_hourly_set() is None
+        write_pending_hourly_set("squats")
+        assert hourly_set_due() is True
+        assert select_hourly_exercise() == "squats"
+        clear_pending_hourly_set()
+        assert get_pending_hourly_set() is None
+        assert _entry_timestamp({"timestamp": "2026-06-16T10:00:00.000Z"}) is not None
+        tracker = ExerciseTrackerHook()
+        try:
+            url = tracker.start_web_server(quick_mode=True)
+            urllib.request.urlopen(f"{url}/abandon", data=b"{}", timeout=2)
+            assert tracker.wait_for_completion(timeout=2).get("abandoned") is True
+        finally:
+            if tracker.server:
+                tracker.server.shutdown()
+            tracker.cleanup_port_file()
+        print("self-test passed")
+    finally:
+        VIBEREPS_HOURLY_PENDING_FILE = old_pending_file
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # Action words that suggest a prompt will result in code edits
@@ -954,6 +1022,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
     """Custom HTTP handler to serve the exercise UI and handle completion"""
 
     exercise_complete = False
+    exercise_abandoned = False
     completion_data = {}
     agent_complete = False
     claude_complete = False
@@ -1061,6 +1130,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
                 if exercise and not exercise.startswith("_") and reps > 0:
                     local_logged = log_to_local(exercise, reps, duration, mode)
                     remote_logged = log_to_remote(exercise, reps, duration)
+                    clear_pending_hourly_set()
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -1072,6 +1142,12 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
                 }).encode())
             except Exception as e:
                 self.send_error(500, str(e))
+        elif self.path == '/abandon':
+            ExerciseHTTPHandler.exercise_abandoned = True
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"abandoned"}')
         elif self.path == '/update-context':
             # Update context for a specific agent session
             try:
@@ -1344,6 +1420,7 @@ class ExerciseTrackerHook:
         """Start a local web server to handle webcam UI"""
         # Reset completion state
         ExerciseHTTPHandler.exercise_complete = False
+        ExerciseHTTPHandler.exercise_abandoned = False
         ExerciseHTTPHandler.completion_data = {}
         ExerciseHTTPHandler.agent_complete = False
         ExerciseHTTPHandler.claude_complete = False
@@ -1374,6 +1451,8 @@ class ExerciseTrackerHook:
         while time.time() - start_time < timeout:
             if ExerciseHTTPHandler.exercise_complete:
                 return ExerciseHTTPHandler.completion_data
+            if ExerciseHTTPHandler.exercise_abandoned:
+                return {"abandoned": True}
             time.sleep(1)
 
         return None
@@ -1573,10 +1652,10 @@ class ExerciseTrackerHook:
                 sys.stderr.flush()
 
             # First, check if Electron menubar app is running or can be launched
-            electron_running = is_electron_app_running()
+            electron_running = False if hourly_mode else is_electron_app_running()
 
             # If Electron app is installed but not running, try to launch it
-            if not electron_running and os.path.exists(ELECTRON_APP_PATH):
+            if not hourly_mode and not electron_running and os.path.exists(ELECTRON_APP_PATH):
                 if launch_electron_app():
                     electron_running = True
 
@@ -1702,6 +1781,30 @@ class ExerciseTrackerHook:
                 lock_file.unlink(missing_ok=True)
                 return {"status": "updated", "message": "Updated context in running exercise tracker"}
 
+            if event_type == "hourly_squats":
+                exercises = select_hourly_exercise()
+                write_pending_hourly_set(exercises)
+                try:
+                    url = self.start_web_server(quick_mode=True)
+                    params = {
+                        "exercises": exercises,
+                        "singleSet": "1",
+                        "targetReps": str(VIBEREPS_HOURLY_REPS),
+                    }
+                    open_small_window(f"{url}?{urllib.parse.urlencode(params)}")
+                    result = self.wait_for_completion(timeout=600)
+                    if result and not result.get("abandoned"):
+                        return {"status": "success", "message": "Hourly exercise completed", "data": result}
+                    return {"status": "blocked", "message": "Hourly exercise still pending"}
+                finally:
+                    try:
+                        lock_file.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    if self.server:
+                        self.server.shutdown()
+                    self.cleanup_port_file()
+
             # Launch detached background process
             script_path = os.path.abspath(__file__)
             subprocess.Popen(
@@ -1778,6 +1881,10 @@ def read_hook_payload_from_stdin() -> dict:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        self_test()
+        return 0
+
     # Check if running as daemon
     if len(sys.argv) > 1 and sys.argv[1] == "--daemon":
         # Load initial session from temp file (written by parent process)
@@ -1844,6 +1951,7 @@ def main():
             result = tracker.handle_hook("hourly_squats", hook_data)
             if not hook_data:
                 print(json.dumps(result))
+            return 0 if result["status"] in ("success", "skipped", "updated") else 1
         return 0
 
     # Check pause — but NOT for notifications (user may be mid-exercise)
