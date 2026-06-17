@@ -1327,14 +1327,6 @@ class ExerciseTrackerHook:
                     print("⏸️ VibeReps paused")
                     break
 
-                # Check if browser window was closed (Chrome process gone)
-                if not is_vibereps_window_open():
-                    # Give a small grace period in case browser is just slow
-                    time.sleep(2)
-                    if not is_vibereps_window_open():
-                        print("🚪 Browser window closed")
-                        break
-
                 time.sleep(1)
         finally:
             # Always clean up
