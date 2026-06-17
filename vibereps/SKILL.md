@@ -1,12 +1,12 @@
 ---
 name: vibereps
-description: Exercise tracker for Claude Code. Setup, test, add exercises, tune detection. Launches pose-detection UI when Claude edits files.
+description: Exercise tracker for Codex and Claude Code. Setup, test, add exercises, tune detection. Launches pose-detection UI when the agent edits files.
 allowed-tools: Read, Write, Edit, AskUserQuestion, Bash, Glob, Grep
 ---
 
 # Vibereps
 
-Exercise tracker for Claude Code. Determine what the user needs based on context:
+Exercise tracker for Codex and Claude Code. Determine what the user needs based on context:
 
 | User Intent | Action |
 |-------------|--------|
@@ -21,7 +21,7 @@ Exercise tracker for Claude Code. Determine what the user needs based on context
 
 ## Overview
 
-Movement breaks while you code. When Claude edits files, vibereps launches a pose-detection exercise UI. Do a few squats or stretches while Claude works, then get notified when it's ready.
+Movement breaks while you code. When Codex or Claude edits files, vibereps launches a pose-detection exercise UI. Do a few squats or stretches while the agent works, then get notified when it's ready.
 
 **Supported exercises:**
 - Standing: squats, jumping_jacks, calf_raises, push_ups, high_knees, standing_crunches, side_stretches, torso_twists, arm_circles
@@ -46,7 +46,7 @@ Options:
 
 **If "Run installer":**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
 ```
 Then show summary and done.
 
@@ -83,7 +83,31 @@ fi
 
 ### Step 5: Configure Hooks
 
-Update `~/.claude/settings.json`:
+For Codex, update `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "apply_patch|Edit|Write",
+      "hooks": [{
+        "type": "command",
+        "command": "VIBEREPS_EXERCISES={exercises} {vibereps_dir}/vibereps.py",
+        "statusMessage": "Starting VibeReps"
+      }]
+    }],
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "{vibereps_dir}/vibereps.py",
+        "statusMessage": "Notifying VibeReps"
+      }]
+    }]
+  }
+}
+```
+
+For Claude Code, update `~/.claude/settings.json`:
 
 ```json
 {
@@ -116,16 +140,16 @@ Replace `{vibereps_dir}` with full path (not ~) and `{exercises}` with comma-sep
 Setup complete!
 
 How it works:
-1. Claude edits a file → Exercise tracker launches
-2. Do a quick exercise while Claude works
-3. Get notified when Claude is ready!
+1. Codex or Claude edits a file → Exercise tracker launches
+2. Do a quick exercise while the agent works
+3. Get notified when the agent is ready!
 ```
 
 ---
 
 ## Test Tracker
 
-**Launch in quick mode** (exercises while Claude works):
+**Launch in quick mode** (exercises while the agent works):
 ```bash
 pkill -f "vibereps.py" 2>/dev/null
 ~/.vibereps/vibereps.py user_prompt_submit '{}'
@@ -305,5 +329,5 @@ curl -X POST http://localhost:8800/api/resume
 
 ## Links
 
-- [GitHub](https://github.com/Flow-Club/vibereps)
-- [Documentation](https://github.com/Flow-Club/vibereps/tree/main/docs)
+- [GitHub](https://github.com/TheLoroXD/vibereps)
+- [Documentation](https://github.com/TheLoroXD/vibereps/tree/main/docs)

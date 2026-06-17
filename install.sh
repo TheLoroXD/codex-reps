@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# VibeReps Installer for Claude Code
-# One-liner install: curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash
+# VibeReps Installer for Codex and Claude Code
+# One-liner install: curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
 #
 
 set -euo pipefail
@@ -20,15 +20,19 @@ print_error() { echo -e "${RED}✗${NC} $1"; }
 
 # Default install location
 INSTALL_DIR="${VIBEREPS_INSTALL_DIR:-$HOME/.vibereps}"
-SETTINGS_FILE="$HOME/.claude/settings.json"
-RELEASE_URL="https://github.com/Flow-Club/vibereps/releases/latest/download/vibereps.tar.gz"
-ELECTRON_DMG_URL="https://github.com/Flow-Club/vibereps/releases/latest/download/VibeReps.dmg"
+CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
+CODEX_HOOKS_FILE="$HOME/.codex/hooks.json"
+RELEASE_URL="https://github.com/TheLoroXD/vibereps/releases/latest/download/vibereps.tar.gz"
+ELECTRON_DMG_URL="https://github.com/TheLoroXD/vibereps/releases/latest/download/VibeReps.dmg"
 
 # UI mode: electron or webapp (default: prompt user)
 UI_MODE="${VIBEREPS_UI_MODE:-}"
 
 # Trigger mode: prompt (experimental) or edit-only (default: prompt user)
 TRIGGER_MODE="${VIBEREPS_TRIGGER_MODE:-}"
+
+# Agent mode: codex, claude, or both
+AGENT_MODE="${VIBEREPS_AGENT:-codex}"
 
 # Check if we're running from an existing clone/dev install
 detect_local_install() {
@@ -105,7 +109,7 @@ choose_trigger_mode() {
     echo -e "${BLUE}When should exercises trigger?${NC}"
     echo ""
     echo -e "  ${YELLOW}1)${NC} ${GREEN}On File Edits${NC} (Recommended)"
-    echo "     Exercises trigger when Claude edits/writes code"
+    echo "     Exercises trigger when Codex or Claude edits/writes code"
     echo "     Most reliable - only triggers when actual changes happen"
     echo ""
     echo -e "  ${YELLOW}2)${NC} ${GREEN}On Prompt Submit${NC} (Experimental)"
@@ -288,15 +292,17 @@ setup_permissions() {
 
 # Backup existing settings
 backup_settings() {
-    if [[ -f "$SETTINGS_FILE" ]]; then
-        BACKUP_FILE="${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-        cp "$SETTINGS_FILE" "$BACKUP_FILE"
-        print_success "Backed up existing settings to $BACKUP_FILE"
-    fi
+    for file in "$CLAUDE_SETTINGS_FILE" "$CODEX_HOOKS_FILE"; do
+        if [[ -f "$file" ]]; then
+            BACKUP_FILE="${file}.backup.$(date +%Y%m%d_%H%M%S)"
+            cp "$file" "$BACKUP_FILE"
+            print_success "Backed up existing settings to $BACKUP_FILE"
+        fi
+    done
 }
 
 # Configure Claude Code hooks using Python for JSON manipulation
-configure_hooks() {
+configure_claude_hooks() {
     print_step "Configuring Claude Code hooks"
 
     # Ensure .claude directory exists
@@ -308,7 +314,7 @@ import json
 import os
 from pathlib import Path
 
-settings_file = Path("$SETTINGS_FILE")
+settings_file = Path("$CLAUDE_SETTINGS_FILE")
 install_dir = "$INSTALL_DIR"
 trigger_mode = "$TRIGGER_MODE"
 
@@ -428,6 +434,128 @@ PYTHON_SCRIPT
     print_success "Claude Code hooks configured"
 }
 
+# Configure Codex hooks using Python for JSON manipulation
+configure_codex_hooks() {
+    print_step "Configuring Codex hooks"
+
+    mkdir -p "$HOME/.codex"
+
+    python3 << PYTHON_SCRIPT
+import json
+from pathlib import Path
+
+hooks_file = Path("$CODEX_HOOKS_FILE")
+install_dir = "$INSTALL_DIR"
+trigger_mode = "$TRIGGER_MODE"
+
+if hooks_file.exists():
+    try:
+        with open(hooks_file) as f:
+            settings = json.load(f)
+    except json.JSONDecodeError:
+        settings = {}
+else:
+    settings = {}
+
+if "hooks" not in settings:
+    settings["hooks"] = {}
+
+exercise_cmd = f"VIBEREPS_EXERCISES=squats,jumping_jacks,standing_crunches,calf_raises,side_stretches {install_dir}/vibereps.py"
+notify_cmd = f"{install_dir}/vibereps.py"
+
+vibereps_hooks = {
+    "PostToolUse": [
+        {
+            "matcher": "apply_patch|Edit|Write",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": exercise_cmd,
+                    "statusMessage": "Starting VibeReps"
+                }
+            ]
+        }
+    ],
+    "Stop": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": notify_cmd,
+                    "statusMessage": "Notifying VibeReps"
+                }
+            ]
+        }
+    ],
+    "SessionStart": [
+        {
+            "matcher": "startup|resume|clear|compact",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": notify_cmd,
+                    "statusMessage": "Loading VibeReps"
+                }
+            ]
+        }
+    ]
+}
+
+if trigger_mode == "prompt":
+    vibereps_hooks["UserPromptSubmit"] = [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": exercise_cmd,
+                    "statusMessage": "Checking VibeReps prompt trigger"
+                }
+            ]
+        }
+    ]
+
+def is_vibereps_hook(h):
+    return any(name in str(h) for name in ["exercise_tracker.py", "notify_complete.py", "vibereps.py"])
+
+for hook_type, hook_configs in vibereps_hooks.items():
+    if hook_type not in settings["hooks"]:
+        settings["hooks"][hook_type] = []
+
+    settings["hooks"][hook_type] = [
+        h for h in settings["hooks"][hook_type]
+        if not is_vibereps_hook(h)
+    ]
+    settings["hooks"][hook_type].extend(hook_configs)
+
+with open(hooks_file, "w") as f:
+    json.dump(settings, f, indent=2)
+
+print("Codex hooks configured successfully")
+PYTHON_SCRIPT
+
+    print_success "Codex hooks configured"
+}
+
+configure_hooks() {
+    case "$AGENT_MODE" in
+        codex)
+            configure_codex_hooks
+            ;;
+        claude)
+            configure_claude_hooks
+            ;;
+        both)
+            configure_codex_hooks
+            configure_claude_hooks
+            ;;
+        *)
+            print_error "Unknown agent mode: $AGENT_MODE"
+            echo "Use codex, claude, or both"
+            exit 1
+            ;;
+    esac
+}
+
 # Show summary
 show_summary() {
     echo ""
@@ -459,47 +587,42 @@ show_summary() {
         echo -e "    ${YELLOW}2.${NC} (Optional) Start at login:"
         echo "       System Settings → General → Login Items → Add VibeReps"
         echo ""
-        echo -e "    ${YELLOW}3.${NC} Restart Claude Code"
+        echo -e "    ${YELLOW}3.${NC} Restart Codex"
     else
-        echo -e "    ${YELLOW}1.${NC} Restart Claude Code"
+        echo -e "    ${YELLOW}1.${NC} Restart Codex"
     fi
     echo ""
     if [[ "$TRIGGER_MODE" == "prompt" ]]; then
-        echo -e "  ${BLUE}Hooks:${NC} ✓ Configured (exercises trigger on prompts + file edits)"
+        echo -e "  ${BLUE}Hooks:${NC} ✓ Configured for $AGENT_MODE (exercises trigger on prompts + file edits)"
     else
-        echo -e "  ${BLUE}Hooks:${NC} ✓ Configured (exercises trigger on file edits)"
+        echo -e "  ${BLUE}Hooks:${NC} ✓ Configured for $AGENT_MODE (exercises trigger on file edits)"
     fi
     echo ""
     echo -e "  ${BLUE}Customize exercises (optional):${NC}"
-    echo -e "    Run ${GREEN}/setup-vibereps${NC} in Claude Code to change exercise types"
+    echo -e "    Edit ${GREEN}$CODEX_HOOKS_FILE${NC} to change exercise types"
     echo ""
     echo -e "  ${BLUE}How it works:${NC}"
     if [[ "$TRIGGER_MODE" == "prompt" ]]; then
         if [[ "$UI_MODE" == "electron" ]]; then
-            echo "    You submit a prompt → AI guesses if edits likely → Exercises start"
-            echo "    → Claude finishes → App notifies you → You return"
+            echo "    You submit a prompt → VibeReps guesses if edits likely → Exercises start"
+            echo "    → Codex finishes → App notifies you → You return"
         else
-            echo "    You submit a prompt → AI guesses if edits likely → Browser opens"
-            echo "    → Claude finishes → Desktop notification → You return"
+            echo "    You submit a prompt → VibeReps guesses if edits likely → Browser opens"
+            echo "    → Codex finishes → Desktop notification → You return"
         fi
     else
         if [[ "$UI_MODE" == "electron" ]]; then
-            echo "    Claude edits a file → Menubar app shows exercises → You exercise"
-            echo "    → Claude finishes → App notifies you → You return"
+            echo "    Codex edits a file → Menubar app shows exercises → You exercise"
+            echo "    → Codex finishes → App notifies you → You return"
         else
-            echo "    Claude edits a file → Browser opens → You exercise"
-            echo "    → Claude finishes → Desktop notification → You return"
+            echo "    Codex edits a file → Browser opens → You exercise"
+            echo "    → Codex finishes → Desktop notification → You return"
         fi
     fi
     echo ""
     echo -e "  ${BLUE}CLI:${NC}"
     echo "    vibereps --toggle        Toggle pause on/off"
     echo "    vibereps --status        Check current state"
-    echo ""
-    echo -e "  ${BLUE}Claude Code skills:${NC}"
-    echo "    /test-tracker    - Test the exercise tracker"
-    echo "    /add-exercise    - Create a custom exercise"
-    echo "    /tune-detection  - Adjust detection sensitivity"
     echo ""
     echo -e "  ${BLUE}To uninstall:${NC} $INSTALL_DIR/install.sh --uninstall"
     echo ""
@@ -510,12 +633,12 @@ uninstall() {
     print_step "Uninstalling VibeReps"
 
     # Remove hooks from settings using Python
-    if [[ -f "$SETTINGS_FILE" ]]; then
+    if [[ -f "$CLAUDE_SETTINGS_FILE" ]]; then
         python3 << PYTHON_SCRIPT
 import json
 from pathlib import Path
 
-settings_file = Path("$SETTINGS_FILE")
+settings_file = Path("$CLAUDE_SETTINGS_FILE")
 
 if settings_file.exists():
     with open(settings_file) as f:
@@ -544,6 +667,39 @@ if settings_file.exists():
     print("Hooks removed from settings")
 PYTHON_SCRIPT
         print_success "Removed hooks from Claude Code settings"
+    fi
+
+    if [[ -f "$CODEX_HOOKS_FILE" ]]; then
+        python3 << PYTHON_SCRIPT
+import json
+from pathlib import Path
+
+hooks_file = Path("$CODEX_HOOKS_FILE")
+
+if hooks_file.exists():
+    with open(hooks_file) as f:
+        settings = json.load(f)
+
+    if "hooks" in settings:
+        for hook_type in list(settings["hooks"].keys()):
+            settings["hooks"][hook_type] = [
+                h for h in settings["hooks"][hook_type]
+                if not any(name in str(h) for name in [
+                    "exercise_tracker.py", "notify_complete.py", "vibereps.py"
+                ])
+            ]
+            if not settings["hooks"][hook_type]:
+                del settings["hooks"][hook_type]
+
+        if not settings["hooks"]:
+            del settings["hooks"]
+
+    with open(hooks_file, "w") as f:
+        json.dump(settings, f, indent=2)
+
+    print("Hooks removed from Codex settings")
+PYTHON_SCRIPT
+        print_success "Removed hooks from Codex settings"
     fi
 
     # Remove Electron app if installed
@@ -576,7 +732,7 @@ PYTHON_SCRIPT
     fi
 
     echo ""
-    print_success "VibeReps uninstalled. Restart Claude Code to apply changes."
+    print_success "VibeReps uninstalled. Restart Codex or Claude Code to apply changes."
 }
 
 # Parse arguments
@@ -590,6 +746,26 @@ while [[ $# -gt 0 ]]; do
             UI_MODE="webapp"
             shift
             ;;
+        --agent)
+            AGENT_MODE="${2:-}"
+            if [[ -z "$AGENT_MODE" ]]; then
+                print_error "--agent requires codex, claude, or both"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --codex)
+            AGENT_MODE="codex"
+            shift
+            ;;
+        --claude)
+            AGENT_MODE="claude"
+            shift
+            ;;
+        --both)
+            AGENT_MODE="both"
+            shift
+            ;;
         --prompt-trigger)
             TRIGGER_MODE="prompt"
             shift
@@ -601,13 +777,17 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --webapp           Use web browser instead of menubar app"
+            echo "  --agent MODE       Configure hooks for codex, claude, or both (default: codex)"
+            echo "  --codex            Configure Codex hooks"
+            echo "  --claude           Configure Claude Code hooks"
+            echo "  --both             Configure Codex and Claude Code hooks"
             echo "  --prompt-trigger   Enable experimental prompt-based triggering"
-            echo "  --uninstall, -u    Remove VibeReps from Claude Code"
+            echo "  --uninstall, -u    Remove VibeReps from Codex and Claude Code"
             echo "  --help, -h         Show this help message"
             echo ""
             echo "Examples:"
             echo "  # Install (defaults to menubar app + edit-only triggers)"
-            echo "  curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash"
+            echo "  curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash"
             echo ""
             echo "  # Install with web browser UI instead"
             echo "  curl -sSL .../install.sh | bash -s -- --webapp"
@@ -628,7 +808,7 @@ done
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║${NC}                    ${BLUE}VibeReps Installer${NC}                      ${GREEN}║${NC}"
-echo -e "${GREEN}║${NC}  Tend to your quads while you tend to your Claudes!                      ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}  Tend to your quads while Codex tends to your code!                      ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}       Don't neglect your physical corpus!                  ${GREEN}║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
