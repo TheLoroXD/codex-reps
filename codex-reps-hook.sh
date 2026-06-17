@@ -13,7 +13,7 @@ case "$mode" in
     if printf '%s' "$payload" | "$(dirname "$0")/vibereps.py" >"$out_file" 2>&1; then code=0; else code=$?; fi
     ;;
   hourly)
-    if printf '%s' "$payload" | env VIBEREPS_MODE=hourly_squats VIBEREPS_EXERCISES=squats "$(dirname "$0")/vibereps.py" >"$out_file" 2>&1; then code=0; else code=$?; fi
+    if printf '%s' "$payload" | env VIBEREPS_MODE=hourly_squats "$(dirname "$0")/vibereps.py" >"$out_file" 2>&1; then code=0; else code=$?; fi
     ;;
   *)
     echo "unknown mode: $mode" >&2

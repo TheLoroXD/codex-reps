@@ -17,6 +17,7 @@ import subprocess
 import hashlib
 import urllib.request
 import urllib.error
+import urllib.parse
 
 # Electron app port (different from webapp's 8765-8774 range)
 ELECTRON_PORT = 8800
@@ -263,6 +264,13 @@ VIBEREPS_EXERCISES = os.getenv("VIBEREPS_EXERCISES", "")  # Comma-separated: "sq
 VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY = os.getenv("VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY", "")  # Set to 1 to --dangerously-skip-leg-day
 VIBEREPS_MODE = os.getenv("VIBEREPS_MODE", "")
 VIBEREPS_HOURLY_INTERVAL_SECONDS = int(os.getenv("VIBEREPS_HOURLY_INTERVAL_SECONDS", "3600"))
+VIBEREPS_HOURLY_REPS = int(os.getenv("VIBEREPS_HOURLY_REPS", "15"))
+HOURLY_EXERCISE_ROTATION = [
+    "squats",
+    "calf_raises",
+    "standing_crunches",
+    "shoulder_shrugs",
+]
 
 # Exercises that require legs (filtered out when VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY=1)
 LEG_EXERCISES = {"squats", "calf_raises", "high_knees", "jumping_jacks"}
@@ -486,27 +494,73 @@ def get_filtered_exercises():
     return exercises
 
 
-def hourly_squats_due() -> bool:
-    """Return True when no squats are logged in the current hourly window."""
+def get_hourly_exercise_rotation() -> list[str]:
+    """Return the exercise rotation for hourly one-set breaks."""
+    exercises = VIBEREPS_EXERCISES
+    if exercises:
+        rotation = [e.strip() for e in exercises.split(",") if e.strip()]
+    else:
+        rotation = HOURLY_EXERCISE_ROTATION[:]
+    if VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY:
+        rotation = [e for e in rotation if e not in LEG_EXERCISES]
+    return rotation or ["shoulder_shrugs"]
+
+
+def _read_exercise_log_entries() -> list[dict]:
     log_file = Path.home() / ".vibereps" / "exercises.jsonl"
     if not log_file.exists():
-        return True
-
-    cutoff = time.time() - VIBEREPS_HOURLY_INTERVAL_SECONDS
+        return []
     try:
-        from datetime import datetime
-        for line in reversed(log_file.read_text().splitlines()):
+        entries = []
+        for line in log_file.read_text().splitlines():
             try:
-                entry = json.loads(line)
-                if entry.get("exercise") != "squats" or entry.get("reps", 0) <= 0:
-                    continue
-                ts = datetime.fromisoformat(entry.get("timestamp", "")).timestamp()
-                return ts < cutoff
-            except (json.JSONDecodeError, ValueError, TypeError, OSError):
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
                 continue
     except OSError:
-        pass
+        return []
+    return entries
+
+
+def _entry_timestamp(entry: dict) -> float | None:
+    try:
+        from datetime import datetime
+        timestamp = entry.get("timestamp", "")
+        if timestamp.endswith("Z"):
+            timestamp = timestamp[:-1] + "+00:00"
+        return datetime.fromisoformat(timestamp).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def hourly_set_due() -> bool:
+    """Return True when no hourly-rotation exercise is logged in the current window."""
+    rotation = set(get_hourly_exercise_rotation())
+    cutoff = time.time() - VIBEREPS_HOURLY_INTERVAL_SECONDS
+    for entry in reversed(_read_exercise_log_entries()):
+        if entry.get("exercise") not in rotation or entry.get("reps", 0) <= 0:
+            continue
+        ts = _entry_timestamp(entry)
+        if ts is None:
+            continue
+        return ts < cutoff
     return True
+
+
+def select_hourly_exercise() -> str:
+    """Cycle through the trainer rotation based on completed sets today."""
+    from datetime import datetime
+    rotation = get_hourly_exercise_rotation()
+    today = datetime.now().date()
+    completed_today = 0
+    rotation_set = set(rotation)
+    for entry in _read_exercise_log_entries():
+        if entry.get("exercise") not in rotation_set or entry.get("reps", 0) <= 0:
+            continue
+        ts = _entry_timestamp(entry)
+        if ts and datetime.fromtimestamp(ts).date() == today:
+            completed_today += 1
+    return rotation[completed_today % len(rotation)]
 
 
 # Action words that suggest a prompt will result in code edits
@@ -1498,8 +1552,8 @@ class ExerciseTrackerHook:
 
         if event_type in ("user_prompt_submit", "post_tool_use", "hourly_squats"):
             hourly_mode = VIBEREPS_MODE == "hourly_squats"
-            if hourly_mode and not hourly_squats_due():
-                return {"status": "skipped", "message": "Hourly squats already completed"}
+            if hourly_mode and not hourly_set_due():
+                return {"status": "skipped", "message": "Hourly exercise already completed"}
 
             # For user_prompt_submit, check if the prompt is likely to result in edits
             if event_type == "user_prompt_submit" and not hourly_mode:
@@ -1666,8 +1720,15 @@ class ExerciseTrackerHook:
                 port = PORT_RANGE.start
             url = f"http://localhost:{port}"
             exercises = get_filtered_exercises()
+            params = {}
+            if event_type == "hourly_squats":
+                exercises = select_hourly_exercise()
+                params["singleSet"] = "1"
+                params["targetReps"] = str(VIBEREPS_HOURLY_REPS)
             if exercises:
-                url += f"?exercises={exercises}"
+                params["exercises"] = exercises
+            if params:
+                url += f"?{urllib.parse.urlencode(params)}"
             open_small_window(url)
 
             # Don't delete lock - let it stay for 10s stale window
@@ -1778,7 +1839,7 @@ def main():
     if event_type == "session_start":
         record_session_start(hook_data)
         check_for_updates()  # Non-blocking, once per day
-        if VIBEREPS_MODE == "hourly_squats" and hourly_squats_due():
+        if VIBEREPS_MODE == "hourly_squats" and hourly_set_due():
             tracker = ExerciseTrackerHook()
             result = tracker.handle_hook("hourly_squats", hook_data)
             if not hook_data:

@@ -628,6 +628,9 @@
         let selectedCameraId = localStorage.getItem('vibereps-camera') || '';
         let completedExercises = new Set();  // Track exercises done this session
         let totalRepsThisSession = 0;        // Total reps across all exercises
+        const urlParams = new URLSearchParams(window.location.search);
+        const singleSetMode = urlParams.get('singleSet') === '1';
+        const targetRepsOverride = parseInt(urlParams.get('targetReps') || '', 10);
 
         // Detection state (baselines, history)
         let detectionState = {};
@@ -666,7 +669,7 @@ const selector = document.getElementById('exerciseSelector');
                 }
 
                 // Auto-start with a random exercise (user can change via dropdown)
-                const exercisesParam = new URLSearchParams(window.location.search).get('exercises');
+                const exercisesParam = urlParams.get('exercises');
                 let availableExercises;
                 if (exercisesParam) {
                     availableExercises = exercisesParam.split(',').map(e => e.trim()).filter(e =>
@@ -1747,6 +1750,9 @@ const selector = document.getElementById('exerciseSelector');
         }
 
         function getTargetReps() {
+            if (Number.isFinite(targetRepsOverride) && targetRepsOverride > 0) {
+                return targetRepsOverride;
+            }
             if (!currentExercise || !exercises[currentExercise]) return 10;
             const reps = exercises[currentExercise].reps;
             return isQuickMode ? reps.quick : reps.normal;
@@ -1799,6 +1805,12 @@ const selector = document.getElementById('exerciseSelector');
                     video.srcObject.getTracks().forEach(track => track.stop());
                 }
                 document.getElementById('videoContainer').classList.remove('active');
+
+                if (singleSetMode) {
+                    document.getElementById('status').textContent = '✅ Set complete.';
+                    setTimeout(() => window.close(), 1200);
+                    return;
+                }
 
                 if (isQuickMode) {
                     // Check if Codex is done before deciding next action
