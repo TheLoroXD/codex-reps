@@ -1614,21 +1614,38 @@ class ExerciseTrackerHook:
 
             running_port = check_server_running()
             if running_port:
+                if event_type == "hourly_squats":
+                    try:
+                        urllib.request.urlopen(f"http://localhost:{running_port}/shutdown", data=b"", timeout=1)
+                        time.sleep(0.5)
+                    except (urllib.error.URLError, OSError):
+                        pass
+                    subprocess.run(["pkill", "-f", "vibereps-chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    try:
+                        lock_file.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    running_port = None
+                else:
+                    lock_file.unlink(missing_ok=True)
+                    # Server already running - send updated context
+                    try:
+                        session_id = self._get_session_id(data)
+                        context = build_claude_context(data) if data else {}
+                        payload = json.dumps({"session_id": session_id, "context": context}).encode()
+                        req = urllib.request.Request(
+                            f"http://localhost:{running_port}/update-context",
+                            data=payload,
+                            headers={"Content-Type": "application/json"},
+                            method="POST"
+                        )
+                        urllib.request.urlopen(req, timeout=2)
+                    except Exception:
+                        pass  # Best effort - don't fail if update doesn't work
+                    return {"status": "updated", "message": "Updated context in running exercise tracker"}
+
+            if running_port:
                 lock_file.unlink(missing_ok=True)
-                # Server already running - send updated context
-                try:
-                    session_id = self._get_session_id(data)
-                    context = build_claude_context(data) if data else {}
-                    payload = json.dumps({"session_id": session_id, "context": context}).encode()
-                    req = urllib.request.Request(
-                        f"http://localhost:{running_port}/update-context",
-                        data=payload,
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
-                    )
-                    urllib.request.urlopen(req, timeout=2)
-                except Exception:
-                    pass  # Best effort - don't fail if update doesn't work
                 return {"status": "updated", "message": "Updated context in running exercise tracker"}
 
             # Launch detached background process
