@@ -6,7 +6,7 @@
 
   "reps": {
     "normal": 10,
-    "quick": 5
+    "quick": 10
   },
 
   "detection": {

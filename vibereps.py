@@ -261,6 +261,8 @@ VIBEREPS_API_URL = os.getenv("VIBEREPS_API_URL", "")  # e.g., "https://vibereps.
 VIBEREPS_API_KEY = os.getenv("VIBEREPS_API_KEY", "")  # Your API key
 VIBEREPS_EXERCISES = os.getenv("VIBEREPS_EXERCISES", "")  # Comma-separated: "squats,pushups,jumping_jacks"
 VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY = os.getenv("VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY", "")  # Set to 1 to --dangerously-skip-leg-day
+VIBEREPS_MODE = os.getenv("VIBEREPS_MODE", "")
+VIBEREPS_HOURLY_INTERVAL_SECONDS = int(os.getenv("VIBEREPS_HOURLY_INTERVAL_SECONDS", "3600"))
 
 # Exercises that require legs (filtered out when VIBEREPS_DANGEROUSLY_SKIP_LEG_DAY=1)
 LEG_EXERCISES = {"squats", "calf_raises", "high_knees", "jumping_jacks"}
@@ -482,6 +484,29 @@ def get_filtered_exercises():
         exercise_list = [e for e in exercise_list if e not in LEG_EXERCISES]
         exercises = ",".join(exercise_list)
     return exercises
+
+
+def hourly_squats_due() -> bool:
+    """Return True when no squats are logged in the current hourly window."""
+    log_file = Path.home() / ".vibereps" / "exercises.jsonl"
+    if not log_file.exists():
+        return True
+
+    cutoff = time.time() - VIBEREPS_HOURLY_INTERVAL_SECONDS
+    try:
+        from datetime import datetime
+        for line in reversed(log_file.read_text().splitlines()):
+            try:
+                entry = json.loads(line)
+                if entry.get("exercise") != "squats" or entry.get("reps", 0) <= 0:
+                    continue
+                ts = datetime.fromisoformat(entry.get("timestamp", "")).timestamp()
+                return ts < cutoff
+            except (json.JSONDecodeError, ValueError, TypeError, OSError):
+                continue
+    except OSError:
+        pass
+    return True
 
 
 # Action words that suggest a prompt will result in code edits
@@ -1327,14 +1352,6 @@ class ExerciseTrackerHook:
                     print("⏸️ VibeReps paused")
                     break
 
-                # Check if browser window was closed (Chrome process gone)
-                if not is_vibereps_window_open():
-                    # Give a small grace period in case browser is just slow
-                    time.sleep(2)
-                    if not is_vibereps_window_open():
-                        print("🚪 Browser window closed")
-                        break
-
                 time.sleep(1)
         finally:
             # Always clean up
@@ -1437,9 +1454,9 @@ class ExerciseTrackerHook:
 
     def handle_notification(self, hook_data):
         """Handle Notification/Stop hook event — notify exercise UI that the agent is done."""
-        # Set terminal tab title
-        sys.stderr.write('\033]0;vibereps: done\007')
-        sys.stderr.flush()
+        if sys.stderr.isatty():
+            sys.stderr.write('\033]0;vibereps: done\007')
+            sys.stderr.flush()
 
         # First try Electron menubar app
         if is_electron_app_running():
@@ -1473,15 +1490,19 @@ class ExerciseTrackerHook:
             return self.handle_notification(data)
 
         # For exercise-triggering events, check suppression conditions
-        if event_type in ("user_prompt_submit", "post_tool_use", "task_complete"):
+        if event_type in ("user_prompt_submit", "post_tool_use", "hourly_squats", "task_complete"):
             if is_agent_session(data):
                 return {"status": "skipped", "message": "Agent/delegate session — skipping exercise"}
-            if is_session_replay(data):
+            if event_type != "hourly_squats" and is_session_replay(data):
                 return {"status": "skipped", "message": "Session replay suppression — skipping exercise"}
 
-        if event_type == "user_prompt_submit" or event_type == "post_tool_use":
+        if event_type in ("user_prompt_submit", "post_tool_use", "hourly_squats"):
+            hourly_mode = VIBEREPS_MODE == "hourly_squats"
+            if hourly_mode and not hourly_squats_due():
+                return {"status": "skipped", "message": "Hourly squats already completed"}
+
             # For user_prompt_submit, check if the prompt is likely to result in edits
-            if event_type == "user_prompt_submit":
+            if event_type == "user_prompt_submit" and not hourly_mode:
                 # Extract prompt from hook data (could be in 'prompt', 'message', or 'content')
                 prompt = ""
                 if data:
@@ -1493,9 +1514,9 @@ class ExerciseTrackerHook:
                 if not prompt_likely_to_edit(prompt):
                     return {"status": "skipped", "message": "Prompt doesn't look like it will result in edits"}
 
-            # Set terminal tab title
-            sys.stderr.write('\033]0;vibereps: exercising\007')
-            sys.stderr.flush()
+            if sys.stderr.isatty():
+                sys.stderr.write('\033]0;vibereps: exercising\007')
+                sys.stderr.flush()
 
             # First, check if Electron menubar app is running or can be launched
             electron_running = is_electron_app_running()
@@ -1740,6 +1761,11 @@ def main():
     if event_type == "session_start":
         record_session_start(hook_data)
         check_for_updates()  # Non-blocking, once per day
+        if VIBEREPS_MODE == "hourly_squats" and hourly_squats_due():
+            tracker = ExerciseTrackerHook()
+            result = tracker.handle_hook("hourly_squats", hook_data)
+            if not hook_data:
+                print(json.dumps(result))
         return 0
 
     # Check pause — but NOT for notifications (user may be mid-exercise)
@@ -1763,8 +1789,9 @@ def main():
     # Run tracker
     result = tracker.handle_hook(event_type, hook_data)
 
-    print(json.dumps(result))
-    return 0 if result["status"] in ("success", "skipped") else 1
+    if not hook_data:
+        print(json.dumps(result))
+    return 0 if result["status"] in ("success", "skipped", "updated") else 1
 
 
 if __name__ == "__main__":
