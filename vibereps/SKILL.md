@@ -46,7 +46,7 @@ Options:
 
 **If "Run installer":**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash
 ```
 Then show summary and done.
 
@@ -329,5 +329,5 @@ curl -X POST http://localhost:8800/api/resume
 
 ## Links
 
-- [GitHub](https://github.com/TheLoroXD/vibereps)
-- [Documentation](https://github.com/TheLoroXD/vibereps/tree/main/docs)
+- [GitHub](https://github.com/TheLoroXD/codex-reps)
+- [Documentation](https://github.com/TheLoroXD/codex-reps/tree/main/docs)

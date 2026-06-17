@@ -415,7 +415,7 @@ def check_for_updates():
             if update_available_file.exists():
                 try:
                     remote_version = update_available_file.read_text().strip()
-                    sys.stderr.write(f"\033[33mvibereps: update available ({remote_version}). Run: curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash\033[0m\n")
+                    sys.stderr.write(f"\033[33mvibereps: update available ({remote_version}). Run: curl -sSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash\033[0m\n")
                     sys.stderr.flush()
                 except OSError:
                     pass
@@ -438,7 +438,7 @@ def check_for_updates():
         def _check():
             try:
                 req = urllib.request.Request(
-                    "https://raw.githubusercontent.com/TheLoroXD/vibereps/main/VERSION",
+                    "https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/VERSION",
                     headers={"User-Agent": "vibereps-update-check"}
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
