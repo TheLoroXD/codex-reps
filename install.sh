@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # VibeReps Installer for Codex and Claude Code
-# One-liner install: curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
+# One-liner install: curl -sSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash
 #
 
 set -euo pipefail
@@ -22,8 +22,8 @@ print_error() { echo -e "${RED}✗${NC} $1"; }
 INSTALL_DIR="${VIBEREPS_INSTALL_DIR:-$HOME/.vibereps}"
 CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
 CODEX_HOOKS_FILE="$HOME/.codex/hooks.json"
-RELEASE_URL="https://github.com/TheLoroXD/vibereps/releases/latest/download/vibereps.tar.gz"
-ELECTRON_DMG_URL="https://github.com/TheLoroXD/vibereps/releases/latest/download/VibeReps.dmg"
+RELEASE_URL="https://github.com/TheLoroXD/codex-reps/releases/latest/download/vibereps.tar.gz"
+ELECTRON_DMG_URL="https://github.com/TheLoroXD/codex-reps/releases/latest/download/VibeReps.dmg"
 
 # UI mode: electron or webapp (default: prompt user)
 UI_MODE="${VIBEREPS_UI_MODE:-}"
@@ -787,7 +787,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  # Install (defaults to menubar app + edit-only triggers)"
-            echo "  curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash"
+            echo "  curl -sSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash"
             echo ""
             echo "  # Install with web browser UI instead"
             echo "  curl -sSL .../install.sh | bash -s -- --webapp"

@@ -18,13 +18,13 @@ Do exercises and think a little yourself while you wait for Codex.
 ## 🚀 One-Line Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash
 ```
 
 This installs the **menubar app** (recommended). For browser-only mode:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash -s -- --webapp
+curl -sSL https://raw.githubusercontent.com/TheLoroXD/codex-reps/main/install.sh | bash -s -- --webapp
 ```
 
 Then restart Codex and run **`/hooks`** once to review and trust the new hooks.
@@ -33,7 +33,7 @@ Then restart Codex and run **`/hooks`** once to review and trust the new hooks.
 <summary><b>Alternative: Install from local clone</b></summary>
 
 ```bash
-git clone https://github.com/TheLoroXD/vibereps.git
+git clone https://github.com/TheLoroXD/codex-reps.git
 cd vibereps
 ./install.sh
 ```
@@ -303,7 +303,7 @@ The skill handles everything based on context:
 ### Install via skills.sh
 
 ```bash
-npx skills add TheLoroXD/vibereps
+npx skills add TheLoroXD/codex-reps
 ```
 
 ## 📊 Usage Statistics
