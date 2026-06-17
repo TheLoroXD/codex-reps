@@ -1,8 +1,8 @@
-# Vibe Reps
+# VibeReps for Codex
 
-Tend to your quads while you tend to your Claudes.
+Tend to your quads while Codex tends to your code.
 
-Do exercises and think a little yourself while you wait for Claude.
+Do exercises and think a little yourself while you wait for Codex.
 
 > "It's the era of tending to your Claudes."
 > — [Boris Cherny](https://x.com/bcherny), creator of Claude Code, on [Greg Isenberg's podcast](https://x.com/gregisenberg)
@@ -18,22 +18,22 @@ Do exercises and think a little yourself while you wait for Claude.
 ## 🚀 One-Line Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash
 ```
 
 This installs the **menubar app** (recommended). For browser-only mode:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash -s -- --webapp
+curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash -s -- --webapp
 ```
 
-Then restart Claude Code and run **`/vibereps`** to choose your exercises.
+Then restart Codex and run **`/hooks`** once to review and trust the new hooks.
 
 <details>
 <summary><b>Alternative: Install from local clone</b></summary>
 
 ```bash
-git clone https://github.com/Flow-Club/vibereps.git
+git clone https://github.com/TheLoroXD/vibereps.git
 cd vibereps
 ./install.sh
 ```
@@ -58,7 +58,7 @@ For a more integrated experience, use the **VibeReps menubar app**:
 - Always-on menubar presence with exercise/usage stats
 - Random exercise auto-selection
 - Native desktop notifications
-- Multi-instance Claude session tracking
+- Multi-instance coding-agent session tracking
 - Offline mode with bundled MediaPipe *(coming soon)*
 
 ### Install Menubar App
@@ -71,7 +71,7 @@ cd electron
 This will:
 1. Build the native macOS app
 2. Install to /Applications
-3. Optionally configure Claude Code hooks
+3. Optionally configure Codex and/or Claude Code hooks
 
 Or build a distributable DMG:
 ```bash
@@ -84,10 +84,10 @@ npm run build:dmg
 <details>
 <summary><b>Menubar App Features</b></summary>
 
-- **Stats in menu**: Today's reps and Claude Code usage at a glance
+- **Stats in menu**: Today's reps and agent usage at a glance
 - **Auto-refresh**: Stats update after each exercise
 - **Random exercise**: Opens with a random exercise (quick mode)
-- **Session tracking**: Tracks multiple Claude instances
+- **Session tracking**: Tracks multiple agent instances
 - **Start at login**: Add to Login Items for always-on tracking
 
 </details>
@@ -96,18 +96,18 @@ npm run build:dmg
 
 ## 🎯 How It Works
 
-**The workflow:** Claude edits a file → Exercise until Claude is done → Get notified when ready
+**The workflow:** Codex edits a file → Exercise until Codex is done → Get notified when ready
 
 ```
-You: "Hey Claude, refactor this code"
+You: "Hey Codex, refactor this code"
     ↓
 🏋️ Exercise tracker launches
     ↓
-You exercise ← → Claude processes your request
+You exercise ← → Codex processes your request
     ↓
-Exercise complete → "⏳ Waiting for Claude..."
+Exercise complete → "⏳ Waiting for Codex..."
     ↓
-Claude finishes → App shows "Ready!"
+Codex finishes → App shows "Ready!"
     ↓
 You return to check the response
 ```
@@ -115,31 +115,30 @@ You return to check the response
 <details>
 <summary><b>Manual setup (if not using installer)</b></summary>
 
-Add to `~/.claude/settings.json`:
+Add to `~/.codex/hooks.json`:
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "apply_patch|Edit|Write",
         "hooks": [
           {
             "type": "command",
             "command": "VIBEREPS_EXERCISES=squats,jumping_jacks,standing_crunches,calf_raises,side_stretches /path/to/vibereps.py",
-            "async": true
+            "statusMessage": "Starting VibeReps"
           }
         ]
       }
     ],
-    "Notification": [
+    "Stop": [
       {
-        "matcher": "idle_prompt|permission_prompt",
         "hooks": [
           {
             "type": "command",
             "command": "/path/to/vibereps.py",
-            "async": true
+            "statusMessage": "Notifying VibeReps"
           }
         ]
       }
@@ -160,9 +159,9 @@ Add to `~/.claude/settings.json`:
   - High knees, torso twists, arm circles
   - Shoulder shrugs, neck rotations, neck tilts (posture correction)
 - **Two modes:**
-  - Quick mode: Keep exercising while Claude works
+  - Quick mode: Keep exercising while Codex works
   - Normal mode: 10+ reps for breaks
-- **Desktop notifications** when Claude is ready (only when terminal isn't focused)
+- **Desktop notifications** when Codex is ready (only when terminal isn't focused)
 - **CLI control** - `vibereps --toggle` / `--pause` / `--resume` / `--status`
 - **Smart suppression** - skips agent sessions, debounces notifications, prevents replay triggers
 - **Auto-updates** - daily non-blocking check for new versions
@@ -207,7 +206,7 @@ export VIBEREPS_DISABLED=1
 export VIBEREPS_UI_MODE=electron  # or webapp
 
 # Trigger mode (when exercises start)
-export VIBEREPS_TRIGGER_MODE=edit-only  # (recommended) trigger when Claude edits files
+export VIBEREPS_TRIGGER_MODE=edit-only  # (recommended) trigger when Codex edits files
 export VIBEREPS_TRIGGER_MODE=prompt     # (experimental) also trigger on prompt submit
 ```
 
@@ -237,8 +236,8 @@ if (angle < 80 && exerciseState !== 'down') {  // Default: 100
 # Test quick mode with specific exercises
 VIBEREPS_EXERCISES=squats,standing_crunches ./vibereps.py post_tool_use '{}'
 
-# Test notification (run in another terminal while tracker is open)
-echo '{"hook_event_name":"Notification"}' | ./vibereps.py
+# Test Codex completion notification (run in another terminal while tracker is open)
+echo '{"hook_event_name":"Stop"}' | ./vibereps.py
 
 # Test normal mode
 ./vibereps.py task_complete '{}'
@@ -287,7 +286,7 @@ which python3  # Use this path if needed
 
 ## 🤖 Claude Code Skill
 
-VibeReps includes a built-in skill you can run in Claude Code:
+VibeReps still includes the upstream Claude Code skill:
 
 ```
 /vibereps
@@ -304,12 +303,12 @@ The skill handles everything based on context:
 ### Install via skills.sh
 
 ```bash
-npx skills add Flow-Club/vibereps
+npx skills add TheLoroXD/vibereps
 ```
 
 ## 📊 Usage Statistics
 
-Track your Claude Code usage alongside exercise data with `vibereps-usage.py`.
+Track Claude Code usage alongside exercise data with `vibereps-usage.py`.
 
 Built on top of [**ccusage**](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) - a fantastic tool for tracking Claude Code token usage and costs. Our usage script was inspired by ccusage's clean table format and adds exercise tracking alongside your coding stats.
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-vibereps.py - Claude Code hook for exercise tracking and notifications
-Launches exercise UI when Claude edits code. Keeps you moving until Claude finishes.
-Handles both exercise tracking (PostToolUse/UserPromptSubmit) and notifications (Notification).
+vibereps.py - AI coding agent hook for exercise tracking and notifications
+Launches exercise UI when Codex or Claude edits code. Keeps you moving until the
+agent finishes. Handles exercise tracking and completion notifications.
 """
 
 import sys
@@ -103,7 +103,7 @@ if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
     print("""VibeReps Exercise Tracker
 
 Usage:
-  vibereps.py [event_type] [data]    Run as Claude Code hook
+  vibereps.py [event_type] [data]    Run as Codex or Claude Code hook
   vibereps.py                        Read event type from stdin JSON
   vibereps.py --list-exercises       List available exercises
   vibereps.py --pause [timestamp]    Pause until timestamp (default: end of day)
@@ -113,10 +113,11 @@ Usage:
   vibereps.py --help                 Show this help
 
 Event types (via argv or stdin hook_event_name):
-  post_tool_use      Quick mode (5 reps while Claude works)
-  user_prompt_submit  Quick mode (5 reps while Claude works)
-  task_complete      Normal mode (10 reps after Claude finishes)
-  notification       Notify exercise tracker that Claude is done
+  post_tool_use      Quick mode (5 reps while the agent works)
+  user_prompt_submit  Quick mode (5 reps while the agent works)
+  task_complete      Normal mode (10 reps after the agent finishes)
+  notification       Notify exercise tracker that the agent is done
+  stop               Alias for notification (Codex Stop hook)
   session_start      Record session start (for replay suppression)
 
 Reliability features:
@@ -309,7 +310,7 @@ def is_agent_session(hook_data: dict) -> bool:
 
 def is_session_replay(hook_data: dict) -> bool:
     """Suppress events within SESSION_REPLAY_WINDOW seconds of session start.
-    When resuming a conversation, Claude Code can fire PostToolUse events
+    When resuming a conversation, an agent can fire PostToolUse events
     for tools that already ran. This prevents ghost exercise triggers."""
     state = _load_state()
     session_starts = state.get("session_start_times", {})
@@ -414,7 +415,7 @@ def check_for_updates():
             if update_available_file.exists():
                 try:
                     remote_version = update_available_file.read_text().strip()
-                    sys.stderr.write(f"\033[33mvibereps: update available ({remote_version}). Run: curl -sSL https://raw.githubusercontent.com/Flow-Club/vibereps/main/install.sh | bash\033[0m\n")
+                    sys.stderr.write(f"\033[33mvibereps: update available ({remote_version}). Run: curl -sSL https://raw.githubusercontent.com/TheLoroXD/vibereps/main/install.sh | bash\033[0m\n")
                     sys.stderr.flush()
                 except OSError:
                     pass
@@ -437,7 +438,7 @@ def check_for_updates():
         def _check():
             try:
                 req = urllib.request.Request(
-                    "https://raw.githubusercontent.com/Flow-Club/vibereps/main/VERSION",
+                    "https://raw.githubusercontent.com/TheLoroXD/vibereps/main/VERSION",
                     headers={"User-Agent": "vibereps-update-check"}
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
@@ -584,7 +585,7 @@ def is_electron_app_running():
 
 def generate_session_id():
     """Generate a unique session ID based on terminal PID and timestamp."""
-    ppid = os.getppid()  # Parent process (Claude Code's shell)
+    ppid = os.getppid()  # Parent process (agent shell)
     timestamp = int(time.time() * 1000)
     return f"session-{ppid}-{timestamp}"
 
@@ -765,7 +766,7 @@ def log_to_remote(exercise: str, reps: int, duration: int = 0) -> bool:
 
 
 def extract_context_from_hook(hook_data: dict) -> dict:
-    """Extract useful context from Claude Code hook payload."""
+    """Extract useful context from Codex or Claude Code hook payload."""
     context = {
         "source": "hook",
         "tool_name": hook_data.get("tool_name"),
@@ -796,7 +797,7 @@ def extract_context_from_hook(hook_data: dict) -> dict:
 
 
 def parse_transcript_for_context(transcript_path: str, max_entries: int = 5) -> list:
-    """Parse Claude Code transcript file to get recent activity."""
+    """Parse a Codex or Claude Code transcript file to get recent activity."""
     recent_activity = []
 
     if not transcript_path or not Path(transcript_path).exists():
@@ -842,7 +843,7 @@ def parse_transcript_for_context(transcript_path: str, max_entries: int = 5) -> 
                     if isinstance(msg, dict):
                         content = msg.get("content", "")
                         if isinstance(content, str) and len(content) > 10:
-                            # First 100 chars of what Claude said
+                            # First 100 chars of what the agent said
                             recent_activity.append({
                                 "tool": "thinking",
                                 "description": content[:100] + "..." if len(content) > 100 else content
@@ -875,6 +876,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
 
     exercise_complete = False
     completion_data = {}
+    agent_complete = False
     claude_complete = False
     quick_mode = False
     claude_sessions = {}  # {session_id: {context: {...}, last_seen: timestamp}}
@@ -896,12 +898,13 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
             html_content = self.get_exercise_interface()
             self.wfile.write(html_content.encode('utf-8'))
         elif parsed_path == '/status':
-            # Check if Claude is done
+            # Check if the coding agent is done
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             status = {
-                "claude_complete": ExerciseHTTPHandler.claude_complete,
+                "claude_complete": ExerciseHTTPHandler.agent_complete,
+                "agent_complete": ExerciseHTTPHandler.agent_complete,
                 "exercise_complete": ExerciseHTTPHandler.exercise_complete,
                 "paused": is_paused()
             }
@@ -929,7 +932,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404, f"Exercise file not found: {filename}")
         elif parsed_path == '/context':
-            # Serve aggregated Claude context from all sessions
+            # Serve aggregated agent context from all sessions
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -991,7 +994,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, str(e))
         elif self.path == '/update-context':
-            # Update context for a specific Claude session
+            # Update context for a specific agent session
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 if content_length > 0:
@@ -1012,7 +1015,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, str(e))
         elif self.path == '/notify':
-            # Notification from Claude that it's done
+            # Notification from the coding agent that it's done
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 if content_length > 0:
@@ -1027,6 +1030,7 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
                             ExerciseHTTPHandler.claude_sessions[session_id]["context"]["notification_type"] = notify_data.get("notification_type")
                         ExerciseHTTPHandler.claude_sessions[session_id]["context"]["complete"] = True
 
+                ExerciseHTTPHandler.agent_complete = True
                 ExerciseHTTPHandler.claude_complete = True
 
                 self.send_response(200)
@@ -1101,11 +1105,11 @@ class ExerciseHTTPHandler(BaseHTTPRequestHandler):
 
         # Build aggregated summary
         if active_count > 0:
-            summary = f"{active_count} Claude{'s' if active_count > 1 else ''} working"
+            summary = f"{active_count} agent{'s' if active_count > 1 else ''} working"
             if complete_count > 0:
                 summary += f", {complete_count} done"
         elif complete_count > 0:
-            summary = f"{complete_count} Claude{'s' if complete_count > 1 else ''} finished"
+            summary = f"{complete_count} agent{'s' if complete_count > 1 else ''} finished"
         else:
             summary = None
 
@@ -1262,6 +1266,7 @@ class ExerciseTrackerHook:
         # Reset completion state
         ExerciseHTTPHandler.exercise_complete = False
         ExerciseHTTPHandler.completion_data = {}
+        ExerciseHTTPHandler.agent_complete = False
         ExerciseHTTPHandler.claude_complete = False
         ExerciseHTTPHandler.quick_mode = quick_mode
         ExerciseHTTPHandler.tracker = self  # Reference for shutdown endpoint
@@ -1361,7 +1366,7 @@ class ExerciseTrackerHook:
         cwd = hook_data.get("cwd") if hook_data else None
         payload = {"session_id": self._get_electron_session_id(cwd)}
         if hook_data:
-            payload["message"] = hook_data.get("message", "Claude finished!")
+            payload["message"] = hook_data.get("message", "Agent finished!")
             payload["notification_type"] = hook_data.get("notification_type", "")
 
         try:
@@ -1397,7 +1402,7 @@ class ExerciseTrackerHook:
         return None
 
     def _notify_exercise_tracker(self, hook_data, max_retries=3):
-        """Send notification to exercise tracker webapp that Claude is done."""
+        """Send notification to exercise tracker webapp that the agent is done."""
         port = self._discover_tracker_port()
         if not port:
             return {"status": "skipped", "message": "Exercise tracker not running"}
@@ -1431,7 +1436,7 @@ class ExerciseTrackerHook:
         return {"status": "error", "message": "Notification failed"}
 
     def handle_notification(self, hook_data):
-        """Handle Notification hook event — notify exercise UI that Claude is done."""
+        """Handle Notification/Stop hook event — notify exercise UI that the agent is done."""
         # Set terminal tab title
         sys.stderr.write('\033]0;vibereps: done\007')
         sys.stderr.flush()
@@ -1441,13 +1446,13 @@ class ExerciseTrackerHook:
             result = self._notify_electron_app(hook_data)
             # Desktop notification only if terminal isn't focused
             if not terminal_is_focused():
-                self._send_desktop_notification("Claude is done! Time to head back.")
+                self._send_desktop_notification("Codex is done! Time to head back.")
             return result
 
         # Fall back to browser-based tracker
         result = self._notify_exercise_tracker(hook_data)
         if not terminal_is_focused():
-            self._send_desktop_notification("Claude is done! Time to head back.")
+            self._send_desktop_notification("Codex is done! Time to head back.")
         return result
 
     def _send_desktop_notification(self, message):
@@ -1462,7 +1467,7 @@ class ExerciseTrackerHook:
 
     def handle_hook(self, event_type, data):
         """Main hook handler"""
-        if event_type == "notification":
+        if event_type in ("notification", "stop"):
             if should_debounce_notification(data):
                 return {"status": "skipped", "message": "Notification debounced (duplicate within 5s)"}
             return self.handle_notification(data)
@@ -1502,7 +1507,7 @@ class ExerciseTrackerHook:
 
             if electron_running:
                 # Get or create session ID (persist across hook calls, per-terminal and cwd)
-                # Include cwd hash to differentiate multiple Claude instances in same parent
+                # Include cwd hash to differentiate multiple agent instances in same parent
                 cwd_hash = ""
                 if data and data.get("cwd"):
                     cwd_hash = f"-{hashlib.md5(data['cwd'].encode()).hexdigest()[:8]}"
@@ -1661,7 +1666,7 @@ CONTEXT_FILE = Path("/tmp/vibereps-context.json")
 
 
 def read_hook_payload_from_stdin() -> dict:
-    """Read Claude Code hook payload from stdin (non-blocking)."""
+    """Read Codex or Claude Code hook payload from stdin (non-blocking)."""
     import select
 
     # Check if there's data on stdin (non-blocking)
@@ -1694,7 +1699,7 @@ def main():
         tracker.run_server_daemon(quick_mode=True)
         return 0
 
-    # Read hook payload from stdin FIRST (Claude Code passes data there)
+    # Read hook payload from stdin FIRST (Codex and Claude Code pass data there)
     hook_data = read_hook_payload_from_stdin()
 
     # Determine event type: prefer stdin hook_event_name, fall back to argv
