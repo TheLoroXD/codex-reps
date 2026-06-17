@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Claude Code Exercise Break</title>
+    <title>Codex Exercise Break</title>
     <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
@@ -390,7 +390,7 @@
         .camera-selector .cam-status.error {
             color: var(--warn);
         }
-        /* Claude context display */
+        /* Agent context display */
         .claude-context {
             margin: 8px 0;
             padding: 8px;
@@ -734,7 +734,7 @@ const selector = document.getElementById('exerciseSelector');
         }
 
         // Update subtitle
-        document.getElementById('subtitle').textContent = 'Tend to your quads while you tend to your Claudes';
+        document.getElementById('subtitle').textContent = 'Tend to your quads while Codex tends to your code';
 
         // ============================================
         // Stand-up detection
@@ -793,17 +793,25 @@ const selector = document.getElementById('exerciseSelector');
                     width: { ideal: 320 },
                     height: { ideal: 240 }
                 };
-                // Use selected camera if available (use 'ideal' to avoid OverconstrainedError)
+                // Use the selected camera exactly; otherwise Chrome may keep the built-in camera.
                 if (selectedCameraId) {
-                    videoConstraints.deviceId = { ideal: selectedCameraId };
+                    videoConstraints.deviceId = { exact: selectedCameraId };
                 }
 
                 console.log('Requesting camera with constraints:', videoConstraints);
                 document.getElementById('status').textContent = 'Requesting camera access...';
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: videoConstraints
-                });
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+                } catch (err) {
+                    if (!selectedCameraId || err.name !== 'OverconstrainedError') throw err;
+                    selectedCameraId = '';
+                    localStorage.removeItem('vibereps-camera');
+                    delete videoConstraints.deviceId;
+                    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+                }
                 video.srcObject = stream;
+                syncSelectedCameraFromStream(stream);
                 document.getElementById('videoContainer').classList.add('active');
                 console.log('Camera stream started');
 
@@ -1793,7 +1801,7 @@ const selector = document.getElementById('exerciseSelector');
                 document.getElementById('videoContainer').classList.remove('active');
 
                 if (isQuickMode) {
-                    // Check if Claude is done before deciding next action
+                    // Check if Codex is done before deciding next action
                     setTimeout(() => checkAndContinueOrFinish(), 1500);
                 } else {
                     // In normal mode, also pick next exercise automatically
@@ -1816,7 +1824,7 @@ const selector = document.getElementById('exerciseSelector');
             }
         }
 
-        // Check if Claude is done, continue with new exercise or finish
+        // Check if Codex is done, continue with new exercise or finish
         async function checkAndContinueOrFinish() {
             try {
                 const response = await fetch('/status');
@@ -1833,10 +1841,10 @@ const selector = document.getElementById('exerciseSelector');
                 }
 
                 if (status.claude_complete) {
-                    // Claude is done! Show completion
+                    // Codex is done! Show completion
                     showClaudeCompleteNotification();
                 } else {
-                    // Claude still working - pick another exercise!
+                    // Codex still working - pick another exercise!
                     const nextExercise = pickNextExercise();
                     if (nextExercise) {
                         const exName = exercises[nextExercise].name;
@@ -1846,17 +1854,17 @@ const selector = document.getElementById('exerciseSelector');
                             startWithStandUpCheck(nextExercise);
                         }, 1000);
                     } else {
-                        // No more exercises available, wait for Claude
-                        document.getElementById('status').textContent = '⏳ All exercises done! Waiting for Claude...';
+                        // No more exercises available, wait for Codex.
+                        document.getElementById('status').textContent = '⏳ All exercises done! Waiting for Codex...';
                         document.getElementById('exerciseSelector').style.display = 'none';
-                        document.querySelector('.finish-btn').textContent = 'Waiting for Claude...';
+                        document.querySelector('.finish-btn').textContent = 'Waiting for Codex...';
                         document.querySelector('.finish-btn').disabled = true;
                         startStatusPolling();
                     }
                 }
             } catch (e) {
-                // If status check fails, just wait for Claude
-                document.getElementById('status').textContent = '⏳ Claude is working on your request...';
+                // If status check fails, just wait for Codex.
+                document.getElementById('status').textContent = '⏳ Codex is working on your request...';
                 startStatusPolling();
             }
         }
@@ -1909,14 +1917,14 @@ const selector = document.getElementById('exerciseSelector');
         }
 
         async function showClaudeCompleteNotification() {
-            // Fetch updated context to show what Claude completed
+            // Fetch updated context to show what Codex completed
             try {
                 const response = await fetch('/context');
                 const context = await response.json();
 
                 // Update the context display with completion info
                 const container = document.getElementById('claudeContext');
-                let html = '<div class="context-header">Claude finished!</div>';
+                let html = '<div class="context-header">Codex finished!</div>';
 
                 if (context.notification) {
                     html += `<div class="context-summary">${escapeHtml(context.notification)}</div>`;
@@ -1929,8 +1937,8 @@ const selector = document.getElementById('exerciseSelector');
                 // Context not available, just show generic message
             }
 
-            document.getElementById('status').textContent = '✅ Claude is ready! Check your response.';
-            document.querySelector('.finish-btn').textContent = 'Return to Claude Code';
+            document.getElementById('status').textContent = '✅ Codex is ready! Check your response.';
+            document.querySelector('.finish-btn').textContent = 'Return to Codex';
             document.querySelector('.finish-btn').disabled = false;
             document.querySelector('.finish-btn').onclick = () => {
                 // Try to close the window - may not work due to browser security
@@ -1942,15 +1950,15 @@ const selector = document.getElementById('exerciseSelector');
             };
 
             if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification('Claude Code Ready!', {
-                    body: 'Your request is complete. Check Claude Code!',
+                new Notification('Codex Ready!', {
+                    body: 'Your request is complete. Check Codex!',
                     icon: '🤖'
                 });
             } else if ('Notification' in window && Notification.permission !== 'denied') {
                 Notification.requestPermission().then(permission => {
                     if (permission === 'granted') {
-                        new Notification('Claude Code Ready!', {
-                            body: 'Your request is complete. Check Claude Code!',
+                        new Notification('Codex Ready!', {
+                            body: 'Your request is complete. Check Codex!',
                             icon: '🤖'
                         });
                     }
@@ -2050,6 +2058,15 @@ const selector = document.getElementById('exerciseSelector');
             }
         }
 
+        function syncSelectedCameraFromStream(stream) {
+            const track = stream.getVideoTracks()[0];
+            const deviceId = track?.getSettings?.().deviceId;
+            if (!deviceId) return;
+            selectedCameraId = deviceId;
+            localStorage.setItem('vibereps-camera', selectedCameraId);
+            document.getElementById('cameraSelect').value = selectedCameraId;
+        }
+
         async function switchCamera(deviceId) {
             const video = document.getElementById('video');
             const status = document.getElementById('camStatus');
@@ -2074,10 +2091,11 @@ const selector = document.getElementById('exerciseSelector');
                     video: {
                         width: { ideal: 320 },
                         height: { ideal: 240 },
-                        deviceId: { ideal: deviceId }
+                        deviceId: { exact: deviceId }
                     }
                 });
                 video.srcObject = stream;
+                syncSelectedCameraFromStream(stream);
 
                 // Use manual frame loop instead of MediaPipe Camera class
                 // (Camera class calls getUserMedia internally and ignores our deviceId)
@@ -2120,7 +2138,7 @@ const selector = document.getElementById('exerciseSelector');
         });
 
         // ============================================
-        // Claude context display
+        // Agent context display
         // ============================================
         async function loadClaudeContext() {
             try {
@@ -2136,8 +2154,8 @@ const selector = document.getElementById('exerciseSelector');
                 // Handle multi-session aggregated format
                 const sessionCount = context.session_count || 1;
                 const headerText = sessionCount > 1
-                    ? `${sessionCount} Claudes working...`
-                    : 'Claude is working...';
+                    ? `${sessionCount} agents working...`
+                    : 'Codex is working...';
                 let html = `<div class="context-header">${headerText}</div>`;
 
                 if (context.summary) {
@@ -2386,18 +2404,18 @@ const selector = document.getElementById('exerciseSelector');
                 if (activity.file_path) {
                     const contextEl = document.getElementById('claudeContext');
                     if (contextEl) {
-                        contextEl.innerHTML = `<div class="context-header">Claude is editing...</div><div>${escapeHtml(activity.file_path.split('/').pop())}</div>`;
+                        contextEl.innerHTML = `<div class="context-header">Codex is editing...</div><div>${escapeHtml(activity.file_path.split('/').pop())}</div>`;
                         contextEl.style.display = 'block';
                     }
                 }
             });
 
-            // Listen for Claude completion
+            // Listen for Codex completion
             window.electronAPI.onClaudeComplete((data) => {
-                console.log('Claude complete:', data);
+                console.log('Codex complete:', data);
                 const contextEl = document.getElementById('claudeContext');
                 if (contextEl) {
-                    contextEl.innerHTML = `<div class="context-header">Claude finished!</div><div>${escapeHtml(data.message || 'Ready for exercise')}</div>`;
+                    contextEl.innerHTML = `<div class="context-header">Codex finished!</div><div>${escapeHtml(data.message || 'Ready for exercise')}</div>`;
                 }
             });
 
