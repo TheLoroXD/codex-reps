@@ -1454,9 +1454,9 @@ class ExerciseTrackerHook:
 
     def handle_notification(self, hook_data):
         """Handle Notification/Stop hook event — notify exercise UI that the agent is done."""
-        # Set terminal tab title
-        sys.stderr.write('\033]0;vibereps: done\007')
-        sys.stderr.flush()
+        if sys.stderr.isatty():
+            sys.stderr.write('\033]0;vibereps: done\007')
+            sys.stderr.flush()
 
         # First try Electron menubar app
         if is_electron_app_running():
@@ -1514,9 +1514,9 @@ class ExerciseTrackerHook:
                 if not prompt_likely_to_edit(prompt):
                     return {"status": "skipped", "message": "Prompt doesn't look like it will result in edits"}
 
-            # Set terminal tab title
-            sys.stderr.write('\033]0;vibereps: exercising\007')
-            sys.stderr.flush()
+            if sys.stderr.isatty():
+                sys.stderr.write('\033]0;vibereps: exercising\007')
+                sys.stderr.flush()
 
             # First, check if Electron menubar app is running or can be launched
             electron_running = is_electron_app_running()
@@ -1763,7 +1763,9 @@ def main():
         check_for_updates()  # Non-blocking, once per day
         if VIBEREPS_MODE == "hourly_squats" and hourly_squats_due():
             tracker = ExerciseTrackerHook()
-            print(json.dumps(tracker.handle_hook("hourly_squats", hook_data)))
+            result = tracker.handle_hook("hourly_squats", hook_data)
+            if not hook_data:
+                print(json.dumps(result))
         return 0
 
     # Check pause — but NOT for notifications (user may be mid-exercise)
@@ -1787,7 +1789,8 @@ def main():
     # Run tracker
     result = tracker.handle_hook(event_type, hook_data)
 
-    print(json.dumps(result))
+    if not hook_data:
+        print(json.dumps(result))
     return 0 if result["status"] in ("success", "skipped", "updated") else 1
 
 
